@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: scamratio-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: URLHAUS_AUTH_KEY
+        sync: false
+      - key: PHISHTANK_APP_KEY
+        sync: false
+      - key: THREATFOX_AUTH_KEY
+        sync: false

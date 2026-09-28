@@ -1,0 +1,20 @@
+{
+  "name": "scamratio-backend",
+  "version": "2.0.0",
+  "private": true,
+  "description": "New ScamRatio multi-source website risk checker backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.3",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0"
+  }
+}
