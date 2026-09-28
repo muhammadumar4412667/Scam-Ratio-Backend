@@ -235,32 +235,100 @@ async function checkPhishTank(url) {
     });
     if (appKey) body.set("app_key", appKey);
 
-    const response = await fetch("http://checkurl.phishtank.com/checkurl/", {
-      method: "POST",
-      headers: {
-        "User-Agent": "ScamRatio/1.0 (website safety checker)",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json"
-      },
-      body,
-      signal: timeoutSignal(10000)
-    });
+    const headers = {
+      "User-Agent": "ScamRatio/2.0 (website safety checker)",
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    };
 
-    const data = await response.json();
-    base.available = true;
+    // PhishTank documents the HTTP endpoint, but redirects/security layers can
+    // return HTML before the JSON response reaches a server-side client.
+    // Try HTTPS first, then the documented HTTP endpoint, and parse text before
+    // JSON so an HTML error never crashes the check.
+    const endpoints = [
+      "https://checkurl.phishtank.com/checkurl/",
+      "http://checkurl.phishtank.com/checkurl/"
+    ];
 
-    const result = data?.results || {};
-    base.listed = String(result.in_database).toLowerCase() === "true";
-    base.verified = ["y", "yes", "true", "1"].includes(String(result.verified).toLowerCase());
-    base.valid = ["y", "yes", "true", "1"].includes(String(result.valid).toLowerCase());
-    base.phishId = result.phish_id || null;
-    base.detail = result.phish_detail_page || null;
+    let lastError = null;
 
-    return base;
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body,
+          redirect: "manual",
+          signal: timeoutSignal(10000)
+        });
+
+        const text = await response.text();
+        const contentType = response.headers.get("content-type") || "";
+
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get("location");
+          if (location) {
+            const redirectResponse = await fetch(location, {
+              method: "POST",
+              headers,
+              body,
+              redirect: "manual",
+              signal: timeoutSignal(10000)
+            });
+            const redirectText = await redirectResponse.text();
+            if (redirectResponse.ok) {
+              let redirectData;
+              try {
+                redirectData = JSON.parse(redirectText);
+              } catch {
+                throw new Error(`PhishTank returned non-JSON content (HTTP ${redirectResponse.status})`);
+              }
+              return applyPhishTankResult(base, redirectData);
+            }
+            lastError = new Error(`PhishTank HTTP ${redirectResponse.status}`);
+            continue;
+          }
+        }
+
+        if (!response.ok) {
+          lastError = new Error(`PhishTank HTTP ${response.status}`);
+          continue;
+        }
+
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          lastError = new Error(
+            `PhishTank returned non-JSON content (HTTP ${response.status}, ${contentType || "unknown content type"})`
+          );
+          continue;
+        }
+
+        return applyPhishTankResult(base, data);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error("PhishTank request failed");
   } catch (error) {
     base.error = error.message;
     return base;
   }
+}
+
+function applyPhishTankResult(base, data) {
+  base.available = true;
+
+  const result = data?.results || {};
+  base.listed = String(result.in_database).toLowerCase() === "true";
+  base.verified = ["y", "yes", "true", "1"].includes(String(result.verified).toLowerCase());
+  base.valid = ["y", "yes", "true", "1"].includes(String(result.valid).toLowerCase());
+  base.phishId = result.phish_id || null;
+  base.detail = result.phish_detail_page || null;
+
+  return base;
 }
 
 async function checkThreatFox(indicator) {
