@@ -235,7 +235,7 @@ async function checkPhishTank(url) {
     });
     if (appKey) body.set("app_key", appKey);
 
-    const response = await fetch("https://checkurl.phishtank.com/checkurl/", {
+    const response = await fetch("http://checkurl.phishtank.com/checkurl/", {
       method: "POST",
       headers: {
         "User-Agent": "ScamRatio/1.0 (website safety checker)",
@@ -327,17 +327,31 @@ async function checkRdap(domain) {
   };
 
   try {
-    const response = await fetch(
-      `https://rdap.org/domain/${encodeURIComponent(domain)}`,
-      { headers: { Accept: "application/rdap+json, application/json" }, signal: timeoutSignal(8000) }
-    );
+    const urls = [];
+    const tld = String(domain).split(".").pop().toLowerCase();
+    if (tld === "com") {
+      urls.push(`https://rdap.verisign.com/com/v1/domain/${encodeURIComponent(domain)}`);
+    }
+    urls.push(`https://rdap.org/domain/${encodeURIComponent(domain)}`);
 
-    if (!response.ok) {
-      base.error = `RDAP HTTP ${response.status}`;
-      return base;
+    let lastStatus = null;
+    let data = null;
+    for (const rdapUrl of urls) {
+      const response = await fetch(
+        rdapUrl,
+        { headers: { Accept: "application/rdap+json, application/json" }, signal: timeoutSignal(8000) }
+      );
+      lastStatus = response.status;
+      if (response.ok) {
+        data = await response.json();
+        break;
+      }
     }
 
-    const data = await response.json();
+    if (!data) {
+      base.error = `RDAP HTTP ${lastStatus}`;
+      return base;
+    }
     base.available = true;
 
     const events = Array.isArray(data.events) ? data.events : [];
